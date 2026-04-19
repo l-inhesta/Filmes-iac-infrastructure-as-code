@@ -48,15 +48,34 @@ jobs:
       # 🔥 UPLOAD DOS YAML
       - name: Upload templates
         run: |
-          aws s3 sync infra.v2/templates s3://$BUCKET_NAME/templates
+          aws s3 sync templates s3://$BUCKET_NAME/templates
+
+      # 🔥 CARREGAR PARÂMETROS DE DEPLOY
+      - name: Load deploy parameters
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          with open('params/dev.json', 'r', encoding='utf-8') as f:
+              params = json.load(f)
+          with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as env:
+              for p in params:
+                  env.write(f"{p['ParameterKey']}={p['ParameterValue']}\n")
+          PY
+
+      - name: Show deploy parameters
+        run: |
+          echo '--- DEPLOY PARAMETERS ---'
+          cat "$GITHUB_ENV"
+          echo '-------------------------'
 
       # 🔥 DEPLOY S3
       - name: Deploy S3
         run: |
           aws cloudformation deploy \
             --stack-name ${ENVIRONMENT}-s3-stack \
-            --template-file infra.v2/templates/s3.yaml \
-            --parameter-overrides EnvironmentName=${ENVIRONMENT} BucketName=${ENVIRONMENT}-filmes-site \
+            --template-file templates/s3.yaml \
+            --parameter-overrides EnvironmentName="${ENVIRONMENT}" BucketName="${BucketName}" \
             --capabilities CAPABILITY_NAMED_IAM
 
       # 🔥 DEPLOY CLOUDFRONT
@@ -64,8 +83,8 @@ jobs:
         run: |
           aws cloudformation deploy \
             --stack-name ${ENVIRONMENT}-cloudfront-stack \
-            --template-file infra.v2/templates/cloudfront.yaml \
-            --parameter-overrides EnvironmentName=${ENVIRONMENT} \
+            --template-file templates/cloudfront.yaml \
+            --parameter-overrides EnvironmentName="${ENVIRONMENT}" DomainName="${DomainName}" CertificateArn="${CertificateArn}" \
             --capabilities CAPABILITY_NAMED_IAM
 
       # 🔥 DEPLOY POLICY
@@ -73,7 +92,7 @@ jobs:
         run: |
           aws cloudformation deploy \
             --stack-name ${ENVIRONMENT}-policy-stack \
-            --template-file infra.v2/templates/policy.yaml \
+            --template-file templates/policy.yaml \
             --parameter-overrides EnvironmentName=${ENVIRONMENT} \
             --capabilities CAPABILITY_NAMED_IAM
 
@@ -82,6 +101,6 @@ jobs:
         run: |
           aws cloudformation deploy \
             --stack-name ${ENVIRONMENT}-route53-stack \
-            --template-file infra.v2/templates/route53.yaml \
-            --parameter-overrides EnvironmentName=${ENVIRONMENT} DomainName=dev.filmes.inhesta.net \
+            --template-file templates/route53.yaml \
+            --parameter-overrides EnvironmentName="${ENVIRONMENT}" DomainName="${DomainName}" \
             --capabilities CAPABILITY_NAMED_IAM

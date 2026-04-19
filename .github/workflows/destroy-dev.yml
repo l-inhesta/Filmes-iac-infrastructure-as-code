@@ -1,0 +1,68 @@
+name: Destroy Infra DEV
+
+on:
+  push:
+    branches:
+      - dev
+
+env:
+  ENVIRONMENT: dev
+  AWS_REGION: us-east-1
+
+jobs:
+  destroy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Configurar AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Definir bucket
+        run: |
+          echo "BUCKET_NAME=infra-filmes-${ENVIRONMENT}" >> $GITHUB_ENV
+
+      # 🔥 ROUTE53
+      - name: Delete Route53 Stack
+        run: |
+          aws cloudformation delete-stack --stack-name ${ENVIRONMENT}-route53-stack || true
+          aws cloudformation wait stack-delete-complete --stack-name ${ENVIRONMENT}-route53-stack || true
+
+      # 🔥 POLICY
+      - name: Delete Policy Stack
+        run: |
+          aws cloudformation delete-stack --stack-name ${ENVIRONMENT}-policy-stack || true
+          aws cloudformation wait stack-delete-complete --stack-name ${ENVIRONMENT}-policy-stack || true
+
+      # 🔥 CLOUDFRONT
+      - name: Delete CloudFront Stack
+        run: |
+          aws cloudformation delete-stack --stack-name ${ENVIRONMENT}-cloudfront-stack || true
+          aws cloudformation wait stack-delete-complete --stack-name ${ENVIRONMENT}-cloudfront-stack || true
+
+      # 🔥 LIMPAR BUCKET SITE
+      - name: Limpar bucket site
+        run: |
+          aws s3 rm s3://${ENVIRONMENT}-filmes-site --recursive || true
+
+      # 🔥 S3 STACK
+      - name: Delete S3 Stack
+        run: |
+          aws cloudformation delete-stack --stack-name ${ENVIRONMENT}-s3-stack || true
+          aws cloudformation wait stack-delete-complete --stack-name ${ENVIRONMENT}-s3-stack || true
+
+      # 🔥 LIMPAR BUCKET DE TEMPLATES
+      - name: Limpar bucket templates
+        run: |
+          aws s3 rm s3://$BUCKET_NAME --recursive || true
+
+      # 🔥 DELETAR BUCKET DE TEMPLATES
+      - name: Deletar bucket templates
+        run: |
+          aws s3 rb s3://$BUCKET_NAME || true
