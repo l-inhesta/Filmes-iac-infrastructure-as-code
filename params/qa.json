@@ -1,0 +1,7 @@
+[
+  { "ParameterKey": "EnvironmentName", "ParameterValue": "qa" },
+  { "ParameterKey": "BucketName", "ParameterValue": "qa-filmes-site" },
+  { "ParameterKey": "DomainName", "ParameterValue": "qa.filmes.inhesta.net" },
+  { "ParameterKey": "HostedZoneName", "ParameterValue": "inhesta.net." },
+  { "ParameterKey": "CertificateArn", "ParameterValue": "arn:aws:acm:us-east-1:319165778373:certificate/1b3c8829-3367-404b-8cbd-bbbc95e81594" }
+]

@@ -1,0 +1,87 @@
+name: Deploy Infra DEV
+
+on:
+  push:
+    branches:
+      - dev
+
+env:
+  ENVIRONMENT: dev
+  AWS_REGION: us-east-1
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Configurar AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # 🔥 DEFINIR NOME DO BUCKET
+      - name: Definir variáveis
+        run: |
+          echo "BUCKET_NAME=infra-filmes-${ENVIRONMENT}" >> $GITHUB_ENV
+
+      # 🔥 CRIAR BUCKET AUTOMATICAMENTE
+      - name: Criar bucket se não existir
+        run: |
+          if aws s3 ls "s3://$BUCKET_NAME" 2>&1 | grep -q 'NoSuchBucket'
+          then
+            echo "Criando bucket..."
+            aws s3 mb s3://$BUCKET_NAME --region $AWS_REGION
+          else
+            echo "Bucket já existe"
+          fi
+
+      # 🔥 CRIAR "PASTA" templates/
+      - name: Criar pasta templates
+        run: |
+          echo "" | aws s3 cp - s3://$BUCKET_NAME/templates/
+
+      # 🔥 UPLOAD DOS YAML
+      - name: Upload templates
+        run: |
+          aws s3 sync infra.v2/templates s3://$BUCKET_NAME/templates
+
+      # 🔥 DEPLOY S3
+      - name: Deploy S3
+        run: |
+          aws cloudformation deploy \
+            --stack-name ${ENVIRONMENT}-s3-stack \
+            --template-file infra.v2/templates/s3.yaml \
+            --parameter-overrides EnvironmentName=${ENVIRONMENT} BucketName=${ENVIRONMENT}-filmes-site \
+            --capabilities CAPABILITY_NAMED_IAM
+
+      # 🔥 DEPLOY CLOUDFRONT
+      - name: Deploy CloudFront
+        run: |
+          aws cloudformation deploy \
+            --stack-name ${ENVIRONMENT}-cloudfront-stack \
+            --template-file infra.v2/templates/cloudfront.yaml \
+            --parameter-overrides EnvironmentName=${ENVIRONMENT} \
+            --capabilities CAPABILITY_NAMED_IAM
+
+      # 🔥 DEPLOY POLICY
+      - name: Deploy Policy
+        run: |
+          aws cloudformation deploy \
+            --stack-name ${ENVIRONMENT}-policy-stack \
+            --template-file infra.v2/templates/policy.yaml \
+            --parameter-overrides EnvironmentName=${ENVIRONMENT} \
+            --capabilities CAPABILITY_NAMED_IAM
+
+      # 🔥 DEPLOY ROUTE53
+      - name: Deploy Route53
+        run: |
+          aws cloudformation deploy \
+            --stack-name ${ENVIRONMENT}-route53-stack \
+            --template-file infra.v2/templates/route53.yaml \
+            --parameter-overrides EnvironmentName=${ENVIRONMENT} DomainName=dev.filmes.inhesta.net \
+            --capabilities CAPABILITY_NAMED_IAM
