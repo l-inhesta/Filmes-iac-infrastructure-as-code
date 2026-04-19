@@ -10,59 +10,121 @@ env:
   AWS_REGION: us-east-1
 
 jobs:
-  destroy:
+  prepare_destroy:
+    name: PREPARE DESTROY PARAMETERS
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout código
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Configurar AWS
+      - name: Configure AWS
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Definir bucket
+      - name: Define bucket name
         run: |
-          echo "BUCKET_NAME=infra-filmes-${ENVIRONMENT}" >> $GITHUB_ENV
+          echo "BUCKET_NAME=infra-filmes-${ENVIRONMENT}" > destroy-params.env
 
-      # 🔥 ROUTE53
+      - name: Upload destroy parameters artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: destroy-params-dev
+          path: destroy-params.env
+          if-no-files-found: error
+
+  destroy_route53:
+    name: DESTROY ROUTE53
+    runs-on: ubuntu-latest
+    needs: prepare_destroy
+
+    steps:
+      - name: Configure AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
       - name: Delete Route53 Stack
         run: |
           aws cloudformation delete-stack --stack-name ${ENVIRONMENT}-route53-stack || true
           aws cloudformation wait stack-delete-complete --stack-name ${ENVIRONMENT}-route53-stack || true
 
-      # 🔥 POLICY
+  destroy_policy:
+    name: DESTROY POLICY
+    runs-on: ubuntu-latest
+    needs: destroy_route53
+
+    steps:
+      - name: Configure AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
       - name: Delete Policy Stack
         run: |
           aws cloudformation delete-stack --stack-name ${ENVIRONMENT}-policy-stack || true
           aws cloudformation wait stack-delete-complete --stack-name ${ENVIRONMENT}-policy-stack || true
 
-      # 🔥 CLOUDFRONT
+  destroy_cloudfront:
+    name: DESTROY CLOUDFRONT
+    runs-on: ubuntu-latest
+    needs: destroy_policy
+
+    steps:
+      - name: Configure AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
       - name: Delete CloudFront Stack
         run: |
           aws cloudformation delete-stack --stack-name ${ENVIRONMENT}-cloudfront-stack || true
           aws cloudformation wait stack-delete-complete --stack-name ${ENVIRONMENT}-cloudfront-stack || true
 
-      # 🔥 LIMPAR BUCKET SITE
-      - name: Limpar bucket site
+  destroy_s3:
+    name: DESTROY S3
+    runs-on: ubuntu-latest
+    needs: destroy_cloudfront
+
+    steps:
+      - name: Configure AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Download destroy parameters artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: destroy-params-dev
+
+      - name: Export destroy parameters
+        run: |
+          cat destroy-params.env >> $GITHUB_ENV
+
+      - name: Clean site bucket
         run: |
           aws s3 rm s3://${ENVIRONMENT}-filmes-site --recursive || true
 
-      # 🔥 S3 STACK
       - name: Delete S3 Stack
         run: |
           aws cloudformation delete-stack --stack-name ${ENVIRONMENT}-s3-stack || true
           aws cloudformation wait stack-delete-complete --stack-name ${ENVIRONMENT}-s3-stack || true
 
-      # 🔥 LIMPAR BUCKET DE TEMPLATES
-      - name: Limpar bucket templates
+      - name: Clean templates bucket
         run: |
           aws s3 rm s3://$BUCKET_NAME --recursive || true
 
-      # 🔥 DELETAR BUCKET DE TEMPLATES
-      - name: Deletar bucket templates
+      - name: Delete templates bucket
         run: |
           aws s3 rb s3://$BUCKET_NAME || true
