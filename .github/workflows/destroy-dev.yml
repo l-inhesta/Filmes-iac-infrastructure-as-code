@@ -1,9 +1,7 @@
 name: Destroy Infra DEV
 
 on:
-  push:
-    branches:
-      - dev
+  workflow_dispatch:
 
 env:
   ENVIRONMENT: dev
